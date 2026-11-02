@@ -2,7 +2,7 @@
 
 A two-player hide-and-chase game over TCP sockets. One player is the warder, the other is the prisoner. The prisoner wins by reaching the tunnel, and the warder wins by catching the prisoner first.
 
-Written in Python 3.9+ with Tkinter. All traffic between the client and server is encrypted with TLS.
+Written in Python 3.9+ with Tkinter, and runs on Windows and macOS. All traffic between the client and server is encrypted with TLS.
 
 ## Files
 
@@ -20,32 +20,64 @@ Written in Python 3.9+ with Tkinter. All traffic between the client and server i
 | `protocol.py` | JSON-lines messages; one thread per connection |
 | `theme.py` | Colors, fonts, rounded buttons, character drawings |
 | `config.py` | Server IP and port (players never type these) |
+| `requirements.txt` | The Python packages to install with pip (see Setup) |
 | `tools/balance.py` | Bot-vs-bot simulation that reports win rates (not run by the tests) |
+
+## Setup (once on every computer)
+
+The game runs on Windows and macOS. The steps are the same; only the Python command differs: type `python` on Windows and `python3` on macOS.
+
+**1. Install Python 3.9 or newer** from [python.org](https://www.python.org/downloads/). It includes Tkinter, which the game windows need. On Windows, tick **Add python.exe to PATH** in the installer. If you use Homebrew's Python on a Mac, also run `brew install python-tk`.
+
+**2. Install the Python packages** listed in `requirements.txt`. Open a terminal in the project folder and run:
+
+Windows (PowerShell or Command Prompt):
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+macOS (Terminal):
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+| Package | What it's for |
+| --- | --- |
+| `cryptography` | Creates the server's TLS key and certificate on its first run. Without it the server stops with "Can't create a certificate". |
+| `qrcode[pil]` | Shows the invite link as a QR code on the dashboard (optional). |
+| `pytest` | Runs the tests (optional). |
+
+**Commands at a glance**
+
+| Task | Windows | macOS |
+| --- | --- | --- |
+| Install the packages | `python -m pip install -r requirements.txt` | `python3 -m pip install -r requirements.txt` |
+| Start the server | `python server.py` | `python3 server.py` |
+| Start a player window | `python client.py` | `python3 client.py` |
+| Install cloudflared (invite link) | `winget install Cloudflare.cloudflared` | `brew install cloudflared` |
+| Run the tests | `python -m pytest -q` | `python3 -m pytest -q` |
+| Make a new certificate | `python security.py --force` | `python3 security.py --force` |
 
 ## Running it
 
 **1. On the server computer**
 
-```bash
-python3 server.py
-```
+Start the server: `python server.py` on Windows, `python3 server.py` on macOS.
 
-On the first run it creates `certs/server.crt` and `certs/server.key`. The dashboard shows the IP address that clients should use.
+On the first run it creates `certs/server.key` and a new `certs/server.crt`. The dashboard shows the IP address that clients should use. If your firewall asks whether Python may accept incoming connections (Windows Defender Firewall, or the macOS firewall), allow it, at least on private networks. Otherwise the second computer can't connect.
 
 **2. Set up the second computer**
 
-Copy the project folder to it, and make sure it includes `certs/server.crt`.
+Copy the project folder to it (or download it from GitHub), then copy `certs/server.crt` **from the server computer** into its `certs` folder. It must be the certificate the server made on its first run: the client refuses any server whose certificate doesn't match its own copy.
 **Do not copy `certs/server.key`.** That key stays on the server.
 
-In `config.py`, set `SERVER_HOST` to the IP address shown on the server dashboard.
+In `config.py`, set `SERVER_HOST` to the IP address shown on the server dashboard. Both computers need to be on the same network.
 
 **3. Start a client on each computer**
 
-```bash
-python3 client.py
-```
-
-Type a nickname and press Join. The match starts once two players are in.
+Run `python client.py` on Windows or `python3 client.py` on macOS. Type a nickname and press Join. The match starts once two players are in.
 
 If you're testing on one machine, leave `SERVER_HOST = "127.0.0.1"`.
 
@@ -54,12 +86,12 @@ If you're testing on one machine, leave `SERVER_HOST = "127.0.0.1"`.
 Friends don't need Python or any files. They open a link in their browser and play, on a laptop or a phone, from anywhere.
 
 1. Install the tunnel tool once on the server computer:
-   ```bash
-   brew install cloudflared
-   ```
-2. Start the server as usual (`python3 server.py`). After a few seconds the **Invite link** card shows a link like
+   - Windows: `winget install Cloudflare.cloudflared`, then open a new terminal so the command is found.
+   - macOS: `brew install cloudflared` (needs [Homebrew](https://brew.sh)).
+2. Start the server as usual. After a few seconds the **Invite link** card shows a link like
    `https://some-random-words.trycloudflare.com/#key=...`
-3. Click **Copy link** and send it to your friend (or let them scan the QR code, if you have `pip install qrcode`).
+   If the page shows "Error 1033" at first, wait up to a minute: the tunnel is still connecting.
+3. Click **Copy link** and send it to your friend, or let them scan the QR code (from `qrcode`, which `requirements.txt` installs).
 
 Browser players and desktop (`client.py`) players can play against each other. You get a new link each time the server starts, and the old link stops working.
 
@@ -123,7 +155,8 @@ Everything goes over TLS (1.2 or newer; on current Python it negotiates TLS 1.3)
 To make a new certificate (for example after `server.key` has leaked), run:
 
 ```bash
-python3 security.py --force
+python security.py --force     # Windows
+python3 security.py --force    # macOS
 ```
 
 After that, copy the new `certs/server.crt` to the clients again.
@@ -155,7 +188,7 @@ After that, copy the new `certs/server.crt` to the clients again.
 
 ## Balance
 
-`python tools/balance.py` plays Scout against Scout through the real game engine. Each bot sees only its own view, and 15% of the moves are random so the bots make mistakes. The numbers are the warder's share of the games that finished.
+`python tools/balance.py` (`python3` on macOS) plays Scout against Scout through the real game engine. Each bot sees only its own view, and 15% of the moves are random so the bots make mistakes. The numbers are the warder's share of the games that finished.
 
 | Classic | Bots' Scout | Warder |
 | --- | --- | --- |
@@ -188,8 +221,10 @@ These Night numbers say more about the bots than the rules. Scout's night prison
 ## Tests
 
 ```bash
-python3 -m pytest -q
+python -m pytest -q     # Windows
+python3 -m pytest -q    # macOS
 ```
+
 Waiting has its own tests (`test_wait.py` for Classic, with both `ALLOW_WAIT` settings, and the Night cases in `test_night.py`): a wait passes the turn without moving, can't be done out of turn, and in Night Escape leaves footprints, counts down smoke and counts toward the lockdown. A hidden wait produces exactly the same real network messages as a move in the dark. `test_solver.py` checks both solvers on positions you can work out by hand. The fair-start test checks over many seeds that no Classic start is a guaranteed win for either side. The start-hint tests check that only the prisoner gets the 3×3 block, that it holds the warder (not always in the middle), stays put and disappears on time, and that the prisoner's real messages never carry the warder's square. The key tests check over many seeds that the key has at least 2 open neighbors, that blocking any single square never cuts it off from the tunnel, that no lantern spot two from the key watches every way out, and that dealing a Night match stays quick. The sight tests check `clear_line` on hand-drawn cases (two walls at a corner, a wall in a straight line, a knight's jump) and that it works the same both ways, and that the game refuses a grab round a walled corner (also after a step, in smoke and under the searchlight) and hides each side behind walls.
 
 The tests cover the game rules, Scout, and real TLS connections on localhost. The side-picking tests cover every combination of picks, the random and last-winner fallbacks, and that a change waits for the next match. The TLS tests check that two players can join and play, that side picks travel both ways and bad ones are refused, that moves out of turn are refused, that plain TCP and oversized messages are rejected, and that the client refuses a server with the wrong certificate. The Night Escape tests cover:
@@ -200,4 +235,6 @@ The tests cover the game rules, Scout, and real TLS connections on localhost. Th
 - all four items, private boxes and the lockdown
 - random steps on timeout, and fair dealing (checked against the solver)
 - Scout's night advice
-- that neither side's real network messages leak hidden positions There are also browser-side tests: a wrong invite key or another website's origin gets a 403, only the game page is served, and a browser player can join, get the game state and pick a side.
+- that neither side's real network messages leak hidden positions
+
+There are also browser-side tests: a wrong invite key or another website's origin gets a 403, only the game page is served, and a browser player can join, get the game state and pick a side.
