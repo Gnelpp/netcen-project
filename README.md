@@ -9,7 +9,7 @@ Written in Python 3.9+ with Tkinter, and runs on Windows and macOS. All traffic 
 | File | What it does |
 | --- | --- |
 | `server.py` | Socket server + dashboard window (who's online, live map, reset button) |
-| `client.py` | Player window: nickname and side screen, board, timer, Scout hints, rematch |
+| `client.py` | Player window: nickname screen, board, timer, Scout hints, rematch |
 | `game.py` | Game rules: map generation, turns, timer, win checks, scores |
 | `ai.py` | Scout, the hint helper (breadth-first search, plus the exact solver in Classic) |
 | `solver.py` | Exact game solvers for Classic and Night Escape, used to deal fair starts |
@@ -97,20 +97,20 @@ Browser players and desktop (`client.py`) players can play against each other. Y
 
 ## How to play
 
+Classic mode follows the assignment's rules exactly:
+
 - The board is 5×5, with 19 open squares, 5 walls and 1 tunnel. Every new match gets a new random map. The server checks that every open square can be reached, so the map is never deadlocked.
-- Pick a side: **Warder**, **Prisoner** or **Either** (the default). You choose on the nickname screen and can change it any time on the game screen, including on the Win/Lost card before pressing Rematch. You can see what your opponent picked.
-- A pick takes effect when the next match starts (rematch, mode switch or server reset), never in the middle of a match. Picks that fit together (Warder + Prisoner, Warder + Either, Prisoner + Either) decide the roles. If you both want the same role (both Warder or both Prisoner), the winner of the most recent finished match gets it and the other player gets the other role. Example: you both pick Prisoner and Alex won the last match, so Alex is the prisoner. If there is no last winner in the room (first match, after the server's Reset, or the last winner has left), it is decided at random. A mode switch keeps the scores, so the last winner still counts after one. If you both picked Either, the usual rule decides: random roles for a first match, and the last winner plays warder on a rematch. Both players are told which rule was used.
+- The server picks the roles at random when a match starts. On a rematch, the winner of the last match is the warder.
 - The warder always moves first.
-- Starts are random but fair. An exact solver checks every Classic start, and neither side may have a guaranteed win from it (with perfect play from both, nobody could force the result). The players start at least 3 walking steps apart (the tunnel counts as a wall for the warder), and the prisoner starts at least 3 walking steps from the tunnel. Maps where the tunnel has only one way in (the warder could camp on it), or where the tunnel cuts the yard in two, are thrown away and a new map is made.
-- You get 10 seconds per turn. To move, click a highlighted square or use the arrow keys / WASD.
-- Instead of moving you can **wait** (the Wait button or Space). A wait uses up your turn exactly like a move, you just stay on your square. Both players can wait, in both modes. To play the assignment's original rule (you must move every turn), set `ALLOW_WAIT = False` in `game.py`.
+- Starts are random but fair. An exact solver checks every Classic start, and neither side may have a guaranteed win from it (with perfect play from both, nobody could force the result). The players start at least 3 walking steps apart (the tunnel counts as a wall for the warder), and the prisoner starts at least 3 walking steps from the tunnel. The players also start an odd number of squares apart: every step changes that distance by one, so from an even distance the warder could never be next to the prisoner on its own turn. Maps where the tunnel has only one way in (the warder could camp on it), or where the tunnel cuts the yard in two, are thrown away and a new map is made.
+- You get 10 seconds per turn, and every turn you move one square up, down, left or right. To move, click a highlighted square or use the arrow keys / WASD.
 - The warder can't enter the tunnel, and the prisoner can't walk into the warder.
-- The winner gets +1. If both players press Rematch, a new match starts with roles decided as above.
-- The server's Reset button starts a fresh match and sets both scores back to 0. Its **Swap sides next match** button sets both players' picks to the opposite of their current roles.
+- The winner gets +1. Both players see **Win** or **Lost** and the scores. If both press Rematch, a new match starts with the winner as the warder.
+- The server's Reset button starts a fresh match and sets both scores back to 0.
 
 ## Night Escape mode
 
-Classic mode is the assignment's game: 5×5, 5 walls, 1 tunnel, the warder moves first, up/down/left/right only, 10-second turns. The one addition is waiting (see above), which `ALLOW_WAIT = False` turns off again. Night Escape is an extra mode. Switch between them on the server dashboard at any time; switching starts a new match and keeps the scores.
+Classic mode is the assignment's game (see above). Night Escape is an extra mode with its own rules, so anything that changes the assignment's game lives here, including picking your side and waiting. Switch between the modes on the server dashboard at any time; switching starts a new match and keeps the scores.
 
 In Classic, a careful prisoner almost always gets away. Night Escape was designed by solving and simulating thousands of games (an exact solver plus bots). Every rule below is there for a reason.
 
@@ -123,7 +123,8 @@ In Classic, a careful prisoner almost always gets away. Night Escape was designe
 | **Footprints** | The warder sees where the prisoner stood 2 turns ago, anywhere on the map (smoke hides it). Without footprints the warder just camped at the tunnel. |
 | **Items** | The prisoner starts every match with a **Smoke bomb**. There are 4 item boxes on the map, 2 per player, and each player only sees their own. Each box shows the item inside: every player gets one box of each of their items. Warder: **Searchlight** (lights the whole yard for 2 warder turns) and **Barricade** (blocks a square within 2 for 3 rounds). Prisoner: **Smoke bomb** (invisible, no footprints, can't be seen for 3 moves) and **Sprint** (2 steps in one turn). |
 | **Lockdown** | If the prisoner hasn't escaped after 60 rounds, the prison locks down and the warder wins. |
-| **Waiting** | Both sides may wait. A prisoner's wait ends their turn like a step: it leaves a footprint, counts down smoke, counts toward the lockdown, ticks barricades and ends a sprint. A warder's wait never gives the step-and-grab extra click (that only follows a step). A wait the other side can't see is announced and sent exactly like a move in the dark, so the network messages don't give it away. |
+| **Pick your side** | Choose **Warder**, **Prisoner** or **Either** (the default) under the board or on the Win/Lost card, and see what your opponent picked. A pick takes effect when the next match starts (rematch, mode switch or server reset), never mid-match. Picks that fit together (Warder + Prisoner, Warder + Either, Prisoner + Either) decide the roles. If you both want the same role, the winner of the most recent finished match gets it (a Classic win counts too). Example: you both pick Prisoner and Alex won the last match, so Alex is the prisoner. With no last winner in the room (first match, after a Reset, or the last winner left) it's random. If you both picked Either, the Classic rule decides. Both players are told which rule was used. The server's **Swap sides next match** button sets both picks to the opposite of the current roles. |
+| **Waiting** | Instead of moving you can wait (the Wait button or Space). A wait uses up your turn exactly like a move; you just stay on your square. Both sides may wait. `ALLOW_WAIT = False` in `game.py` turns it off. A prisoner's wait ends their turn like a step: it leaves a footprint, counts down smoke, counts toward the lockdown, ticks barricades and ends a sprint. A warder's wait never gives the step-and-grab extra click (that only follows a step). A wait the other side can't see is announced and sent exactly like a move in the dark, so the network messages don't give it away. |
 | **Fair deals** | The warder starts at least as close to the tunnel as the prisoner, but never right next to it. An exact game-tree solver (`solver.py`, with waiting for both sides) rejects any deal where the prisoner could escape by force. |
 | **Start hint** | When the prisoner's first turn begins (after the warder's opening move), the prisoner sees a red 3×3 block labelled "Warder is somewhere here". The warder is in it, but not always in the middle: the block is picked at random once per match (and slides inward at the edges), so it can't be narrowed down by comparing updates. It stays as a faded "last known area" for one more turn (`START_HINT_TURNS`). Only the prisoner's view carries it, never the warder's exact square, and Scout plans the prisoner's route around it. |
 
@@ -165,10 +166,10 @@ After that, copy the new `certs/server.crt` to the clients again.
 
 | Feature | AI? |
 | --- | --- |
-| Scout: a breadth-first-search hint that shows the best next square on the board, or tells you to wait when staying put is best. In Night Escape it plans around the grab zone, and a warder who can't see follows the footprints. Browser players get the same hint from the server (`ai.py`), computed only from their own view. | ✓ |
-| Wait instead of moving (button or Space), with `ALLOW_WAIT` to switch back to the must-move rule | |
+| Scout: a breadth-first-search hint that shows the best next square on the board. In Night Escape it also tells you to wait when staying put is best, plans around the grab zone, and a warder who can't see follows the footprints. Browser players get the same hint from the server (`ai.py`), computed only from their own view. | ✓ |
+| Night Escape: wait instead of moving (button or Space) | |
 | Exact game-tree solvers that deal only fair starts (no forced wins) in Classic and Night Escape | ✓ |
-| Scout in Classic: ranks every step and waiting with the exact solver (take a forced win, avoid a forced loss), then by walking distance | ✓ |
+| Scout in Classic: ranks every step with the exact solver (take a forced win, avoid a forced loss), then by walking distance | ✓ |
 | Night Escape mode: 10×10 fog of war for both sides, with server-side hidden information | |
 | Night Escape: secret key that unlocks the tunnel | |
 | Night Escape: step-and-grab + footprints | |
@@ -180,7 +181,7 @@ After that, copy the new `certs/server.crt` to the clients again.
 | Public invite link: play in any browser, even on a phone, via a secure tunnel | |
 | Click-to-move with highlighted legal squares | |
 | Lobby: see who's online before joining, with live updates | |
-| Choose your side (Warder, Prisoner or Either), see your opponent's pick, swap sides from the server dashboard | |
+| Night Escape: choose your side (Warder, Prisoner or Either), see your opponent's pick, swap sides from the server dashboard | |
 | Server dashboard with a live mini-map of the current match | |
 | Fair random starting positions | |
 | Countdown ring timer, footprints showing the last move, and a Win/Lost card | |
@@ -197,14 +198,15 @@ After that, copy the new `certs/server.crt` to the clients again.
 | Waiting allowed, same starts | with the solver | 43% |
 | + solver-checked starts (no guaranteed wins) | with the solver | 60% |
 | + walking distances, no maps split by the tunnel | with the solver | 60% |
-| + at least 2 ways into the tunnel (**final**) | with the solver | **58%** |
-| Final rules, but must move (`ALLOW_WAIT = False`) | with the solver | 24% |
+| + at least 2 ways into the tunnel | with the solver | 58% |
+| Same rules, but must move (no waiting in Classic, as the assignment says) | with the solver | 24% |
+| + the players start an odd number of squares apart (**final**) | with the solver | **63%** |
 
-With the old starts, 40% of Classic starts were a guaranteed prisoner win and 9% a guaranteed warder win (with waiting allowed; 40% and 32% without). The final rules hold at 56-61% across 5-25% random moves. The breadth-first Scout made a poor prisoner (it walked right next to the warder), so with solver-checked starts it handed the warder 63%. That's why Scout's Classic advice now uses the solver for both sides.
+Waiting was tried in Classic first (the rows above that allow it), but the assignment says every turn is a step to an adjacent block, so Classic doesn't allow it any more and waiting is a Night Escape rule. With the old starts, 40% of Classic starts were a guaranteed prisoner win and 9% a guaranteed warder win (with waiting allowed; 40% and 32% without). The final rules hold at 60-64% across 5-25% random moves. The breadth-first Scout made a poor prisoner (it walked right next to the warder), so with solver-checked starts it handed the warder 63%. That's why Scout's Classic advice now uses the solver for both sides.
 
 Two rules were tried and dropped. "The warder can reach a square next to the tunnel no later than the prisoner reaches the tunnel" changed nothing, because the solver check already rules those starts out. Capping the prisoner's walk to the tunnel at 4-5 steps moved the result by about 1%. Requiring 3 ways into the tunnel gives 56%, but it throws away about 40% of maps; `MIN_TUNNEL_ENTRANCES` in `game.py` sets it.
 
-Without waiting, solver-checked starts don't fix the balance: the distance between the players changes by exactly 1 every move, so on an even distance the warder can never be next to the prisoner on its own turn.
+Without waiting, solver-checked starts alone don't fix the balance: the distance between the players changes by exactly 1 every move, so on an even distance the warder can never be next to the prisoner on its own turn. 80% of the solver-checked starts had an even distance. Dealing only odd distances fixes that. Only about 1 map in 5 has such a start, so dealing tries up to 100 maps (`CLASSIC_DEAL_TRIES`); a deal still takes about 3 ms.
 
 | Night Escape (bots also use items) | Warder |
 | --- | --- |
@@ -225,9 +227,9 @@ python -m pytest -q     # Windows
 python3 -m pytest -q    # macOS
 ```
 
-Waiting has its own tests (`test_wait.py` for Classic, with both `ALLOW_WAIT` settings, and the Night cases in `test_night.py`): a wait passes the turn without moving, can't be done out of turn, and in Night Escape leaves footprints, counts down smoke and counts toward the lockdown. A hidden wait produces exactly the same real network messages as a move in the dark. `test_solver.py` checks both solvers on positions you can work out by hand. The fair-start test checks over many seeds that no Classic start is a guaranteed win for either side. The start-hint tests check that only the prisoner gets the 3×3 block, that it holds the warder (not always in the middle), stays put and disappears on time, and that the prisoner's real messages never carry the warder's square. The key tests check over many seeds that the key has at least 2 open neighbors, that blocking any single square never cuts it off from the tunnel, that no lantern spot two from the key watches every way out, and that dealing a Night match stays quick. The sight tests check `clear_line` on hand-drawn cases (two walls at a corner, a wall in a straight line, a knight's jump) and that it works the same both ways, and that the game refuses a grab round a walled corner (also after a step, in smoke and under the searchlight) and hides each side behind walls.
+Waiting has its own tests (`test_wait.py`, plus more Night cases in `test_night.py`): Classic refuses a wait, and in Night Escape a wait passes the turn without moving, can't be done out of turn, can be switched off with `ALLOW_WAIT`, leaves footprints, counts down smoke and counts toward the lockdown. A hidden wait produces exactly the same real network messages as a move in the dark. `test_solver.py` checks both solvers on positions you can work out by hand. The fair-start test checks over many seeds that no Classic start is a guaranteed win for either side and that the players start an odd distance apart. The start-hint tests check that only the prisoner gets the 3×3 block, that it holds the warder (not always in the middle), stays put and disappears on time, and that the prisoner's real messages never carry the warder's square. The key tests check over many seeds that the key has at least 2 open neighbors, that blocking any single square never cuts it off from the tunnel, that no lantern spot two from the key watches every way out, and that dealing a Night match stays quick. The sight tests check `clear_line` on hand-drawn cases (two walls at a corner, a wall in a straight line, a knight's jump) and that it works the same both ways, and that the game refuses a grab round a walled corner (also after a step, in smoke and under the searchlight) and hides each side behind walls.
 
-The tests cover the game rules, Scout, and real TLS connections on localhost. The side-picking tests cover every combination of picks, the random and last-winner fallbacks, and that a change waits for the next match. The TLS tests check that two players can join and play, that side picks travel both ways and bad ones are refused, that moves out of turn are refused, that plain TCP and oversized messages are rejected, and that the client refuses a server with the wrong certificate. The Night Escape tests cover:
+The tests cover the game rules, Scout, and real TLS connections on localhost. The Classic role tests check that roles are random whatever the players picked, and that on a rematch the winner is the warder and moves first. The Night Escape side-picking tests cover every combination of picks, the random and last-winner fallbacks, and that a change waits for the next match. The TLS tests check that two players can join and play, that a Classic rematch makes the winner the warder, that side picks travel both ways and bad ones are refused, that moves out of turn are refused, that plain TCP and oversized messages are rejected, and that the client refuses a server with the wrong certificate. The Night Escape tests cover:
 - what each role can see
 - the key and the locked tunnel
 - the lock-on grab and the extra click after a step

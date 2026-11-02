@@ -1,8 +1,7 @@
 import unittest
 import time
-from unittest import mock
 
-from game import EscapeGame, OBSTACLE_COUNT, SIDES, clean_nickname
+from game import EscapeGame, OBSTACLE_COUNT, SIDES, clean_nickname, manhattan
 
 
 class EscapeGameTests(unittest.TestCase):
@@ -125,28 +124,29 @@ class EscapeGameTests(unittest.TestCase):
     def test_starting_spots_are_fair(self):
         from solver import classic_outcomes
 
-        for allow_wait in (True, False):
-            with mock.patch("game.ALLOW_WAIT", allow_wait):
-                for seed in range(60):
-                    game = EscapeGame(seed=seed)
-                    game.add_player("a", "A")
-                    game.add_player("b", "B")
-                    game.start_match()
-                    roles = {p.role: p.position for p in game.players.values()}
-                    warder, prisoner, tunnel = roles["warder"], roles["prisoner"], game.tunnel
-                    # Neither side can force a win from the start (warder to move).
-                    forced = classic_outcomes(game.size, game.obstacles, tunnel, allow_wait)
-                    self.assertNotIn((warder, prisoner, "W"), forced, (seed, allow_wait))
-                    # Real walking distances; the tunnel is a wall for the warder.
-                    walk = game._distances_from(warder, blocked={tunnel})
-                    self.assertGreaterEqual(walk[prisoner], 3)
-                    self.assertGreaterEqual(game._distances_from(tunnel)[prisoner], 3)
-                    # The warder reaches every square without the tunnel, and the
-                    # tunnel has at least two ways in.
-                    self.assertEqual(len(walk), len(game._free_cells()))
-                    entrances = [c for c in game._neighbors(tunnel)
-                                 if game._inside(c) and c not in game.obstacles]
-                    self.assertGreaterEqual(len(entrances), 2)
+        for seed in range(60):
+            game = EscapeGame(seed=seed)
+            game.add_player("a", "A")
+            game.add_player("b", "B")
+            game.start_match()
+            roles = {p.role: p.position for p in game.players.values()}
+            warder, prisoner, tunnel = roles["warder"], roles["prisoner"], game.tunnel
+            # Neither side can force a win from the start (warder to move, no waiting).
+            forced = classic_outcomes(game.size, game.obstacles, tunnel, False)
+            self.assertNotIn((warder, prisoner, "W"), forced, seed)
+            # Every step changes the distance by one, so the warder can only ever
+            # stand next to the prisoner on its own turn from an odd distance.
+            self.assertEqual(manhattan(warder, prisoner) % 2, 1, seed)
+            # Real walking distances; the tunnel is a wall for the warder.
+            walk = game._distances_from(warder, blocked={tunnel})
+            self.assertGreaterEqual(walk[prisoner], 3)
+            self.assertGreaterEqual(game._distances_from(tunnel)[prisoner], 3)
+            # The warder reaches every square without the tunnel, and the
+            # tunnel has at least two ways in.
+            self.assertEqual(len(walk), len(game._free_cells()))
+            entrances = [c for c in game._neighbors(tunnel)
+                         if game._inside(c) and c not in game.obstacles]
+            self.assertGreaterEqual(len(entrances), 2)
 
     def test_dealing_a_classic_match_is_quick(self):
         game = EscapeGame(seed=3)
@@ -176,10 +176,54 @@ class EscapeGameTests(unittest.TestCase):
         self.assertEqual(snap["last_move"]["to"], list(prisoner.position))
 
 
-class SidePickTests(unittest.TestCase):
-    """Players pick Warder, Prisoner or Either; picks apply when a match starts."""
+class ClassicRoleTests(unittest.TestCase):
+    """Classic deals roles by the assignment: random, and the last winner plays warder on a rematch."""
 
-    def new_game(self, side_a, side_b, seed=3, mode="classic"):
+    def new_game(self, side_a="any", side_b="any", seed=3):
+        game = EscapeGame(seed=seed)
+        game.add_player("a", "Alice", side_a)
+        game.add_player("b", "Bob", side_b)
+        game.start_match()
+        return game
+
+    def rematch(self, game, winner):
+        game._finish(winner, "escaped")
+        game.request_rematch("a")
+        accepted, message = game.request_rematch("b")
+        self.assertTrue(accepted)
+        return message
+
+    def test_a_new_match_deals_random_roles_whatever_was_picked(self):
+        warders = set()
+        for seed in range(20):
+            game = self.new_game("warder", "prisoner", seed)
+            warders.add(game.turn_player_id)
+            self.assertEqual(game.role_note, "Roles were picked at random.")
+        self.assertEqual(warders, {"a", "b"})
+
+    def test_the_winner_plays_warder_and_moves_first_on_a_rematch(self):
+        for winner, loser in (("a", "b"), ("b", "a")):
+            # The winner asked to be the prisoner: Classic ignores it.
+            game = self.new_game(*(("prisoner", "warder") if winner == "a" else ("warder", "prisoner")))
+            message = self.rematch(game, winner)
+            self.assertEqual(game.players[winner].role, "warder")
+            self.assertEqual(game.players[loser].role, "prisoner")
+            self.assertEqual(game.turn_player_id, winner)
+            name = game.players[winner].nickname
+            self.assertEqual(game.role_note, "%s won the last match, so %s is the warder and moves first."
+                             % (name, name))
+            self.assertIn(game.role_note, message)
+
+    def test_the_server_swap_is_night_only(self):
+        game = self.new_game()
+        self.assertFalse(game.swap_sides())
+        self.assertEqual({p.side for p in game.players.values()}, {"any"})
+
+
+class SidePickTests(unittest.TestCase):
+    """Night Escape: players pick Warder, Prisoner or Either; picks apply when a match starts."""
+
+    def new_game(self, side_a, side_b, seed=3, mode="night"):
         game = EscapeGame(seed=seed, mode=mode)
         game.add_player("a", "Alice", side_a)
         game.add_player("b", "Bob", side_b)
@@ -244,14 +288,17 @@ class SidePickTests(unittest.TestCase):
             self.assertIn("won the last match", game.role_note)
 
     def test_the_last_winner_counts_after_a_mode_switch(self):
-        game = self.new_game("prisoner", "prisoner")
+        game = self.new_game("prisoner", "prisoner", mode="classic")
         game._finish("b", "escaped")
         game.set_mode("night")                                      # new match, scores kept
         self.assertEqual(game.players["b"].role, "prisoner")
         game._finish("a", "caught")
-        game.set_mode("classic")
-        self.assertEqual(game.players["a"].role, "prisoner")        # the latest winner counts
-        self.assertIn("Alice won the last match", game.role_note)
+        game.set_mode("classic")                                    # Classic: picks don't count
+        self.assertEqual(game.role_note, "Roles were picked at random.")
+        game._finish("b", "caught")                                 # but a Classic win does
+        game.set_mode("night")
+        self.assertEqual(game.players["b"].role, "prisoner")        # the latest winner counts
+        self.assertIn("Bob won the last match", game.role_note)
 
     def test_a_clash_is_random_after_the_last_winner_leaves(self):
         def games(side):
@@ -311,6 +358,7 @@ class SidePickTests(unittest.TestCase):
         self.assertEqual(sides, {"a": "prisoner", "b": "warder"})   # but both can see the new picks
         game.reset_game()                                           # server reset starts the next match
         self.assertEqual(game.players["b"].role, "warder")
+        game.set_mode("classic")
         game.set_mode("night")                                      # and so does a mode switch
         self.assertEqual(game.players["b"].role, "warder")
 
@@ -323,8 +371,8 @@ class SidePickTests(unittest.TestCase):
             EscapeGame().add_player("x", "Xena", "king")
         self.assertEqual(game.players["a"].side, "any")
 
-    def test_picks_work_in_night_escape_and_stay_visible_in_the_dark(self):
-        game = self.new_game("prisoner", "any", seed=4, mode="night")
+    def test_picks_stay_visible_in_the_dark(self):
+        game = self.new_game("prisoner", "any", seed=4)
         self.assertEqual(game.players["b"].role, "warder")
         warder_view = game.snapshot("b")
         prisoner = next(p for p in warder_view["players"] if p["id"] == "a")

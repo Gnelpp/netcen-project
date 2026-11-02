@@ -385,9 +385,12 @@ class GameServer:
     def swap_sides(self) -> None:
         with self.lock:
             swapped = self.game.swap_sides()
+            night = self.game.night
         if swapped:
             self.log("Sides will swap next match.")
             self.broadcast("The server asked for swapped sides next match.")
+        elif not night:
+            self.log("Swapping sides is a Night Escape option. In Classic the last winner plays warder.")
         else:
             self.log("Nothing to swap yet: sides are dealt when a match starts.")
 
@@ -543,7 +546,8 @@ class ServerDashboard:
         mode_words.pack(side="left", fill="x", expand=True)
         tk.Label(mode_words, text="Game mode", bg=CARD, fg=INK,
                  font=Fonts.get(13, "bold")).pack(anchor="w")
-        tk.Label(mode_words, text="Night Escape: 10x10 in the dark, a key,\nstep-and-grab, footprints and items.",
+        tk.Label(mode_words, text="Night Escape: 10x10 in the dark, a key, step-and-grab,\n"
+                 "footprints, items, side picks and waiting.",
                  bg=CARD, fg=SOFT, font=Fonts.get(11), justify="left").pack(anchor="w")
         modes = tk.Frame(mode_row, bg=CARD)
         modes.pack(side="right")
@@ -553,15 +557,17 @@ class ServerDashboard:
                                 width=108, height=34, font_size=11)
             button.pack(side="left", padx=(0, 4) if mode == MODES[0] else 0)
             self.mode_buttons[mode] = button
-        self._show_mode("classic")
         tk.Label(reset_card, text="Start over", bg=CARD, fg=INK,
                  font=Fonts.get(13, "bold")).pack(anchor="w", padx=16, pady=(14, 2))
         tk.Label(reset_card, text="New map, new roles,\nboth scores back to 0.", bg=CARD,
                  fg=SOFT, font=Fonts.get(11), justify="left").pack(anchor="w", padx=16)
-        PillButton(reset_card, "Swap sides next match", command=self.server.swap_sides,
-                   color=INK, width=220, height=36, font_size=11).pack(padx=16, pady=(10, 0))
+        # Side picks are a Night Escape rule, so the swap only works there.
+        self.swap_button = PillButton(reset_card, "Swap sides next match", command=self.server.swap_sides,
+                                      color=INK, width=220, height=36, font_size=11)
+        self.swap_button.pack(padx=16, pady=(10, 0))
         PillButton(reset_card, "Reset game & scores", command=self.confirm_reset,
                    color=BAD, width=220, height=40).pack(padx=16, pady=(8, 14))
+        self._show_mode("classic")
 
     # ----- events from network threads ------------------------------------
 
@@ -607,7 +613,7 @@ class ServerDashboard:
                      font=Fonts.get(12, "bold")).pack(side="left", padx=(6, 8))
             extra = "choosing a name..." if not client.get("joined") else (
                 (player or {}).get("role") or "waiting")
-            if player and player.get("side", "any") != "any":
+            if player and state.get("mode") == "night" and player.get("side", "any") != "any":
                 extra += "  ·  wants %s" % SIDE_NAMES[player["side"]]
             tk.Label(row, text=extra, bg=CARD, fg=SOFT, font=Fonts.get(11)).pack(side="left")
             tk.Label(row, text="%s  ·  %s" % (client.get("address", ""), client.get("tls", "")),
@@ -632,6 +638,7 @@ class ServerDashboard:
         for mode, button in self.mode_buttons.items():
             button.configure_button(color=(NIGHT_CHIP if mode == "night" else INK)
                                     if mode == current else "#cbbfa8")
+        self.swap_button.configure_button(enabled=current == "night")
 
     def _draw_mini(self, state: dict) -> None:
         c = self.mini

@@ -8,7 +8,7 @@ darkness, footprints, items on the map and the lockdown all apply.
 
     python tools/balance.py                      # both modes, 1000 games each
     python tools/balance.py --mode classic --games 3000 --noise 0.15
-    python tools/balance.py --no-wait            # the assignment's must-move rule
+    python tools/balance.py --no-wait            # Night Escape without waiting too
 
 The report gives the warder's share of the games that finished; the goal for
 Classic is roughly 40-60%.
@@ -36,7 +36,7 @@ def random_action(game: EscapeGame, pid: str, rng: random.Random) -> bool:
     """Make any legal move (a wait counts when waiting is allowed)."""
 
     options = STEPS[:]
-    if getattr(game_module, "ALLOW_WAIT", False):
+    if game.can_wait:
         options.append("stay")
     rng.shuffle(options)
     for option in options:
@@ -124,7 +124,7 @@ def main() -> None:
     parser.add_argument("--max-moves", type=int, default=None,
                         help="moves (both players) before giving up; default 150 Classic, 400 Night")
     parser.add_argument("--seed", type=int, default=0, help="first game seed")
-    parser.add_argument("--no-wait", action="store_true", help="play with ALLOW_WAIT = False")
+    parser.add_argument("--no-wait", action="store_true", help="Night Escape with ALLOW_WAIT = False (Classic never waits)")
     parser.add_argument("--no-items", action="store_true", help="Night bots never use their items")
     args = parser.parse_args()
     if args.no_wait:

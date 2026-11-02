@@ -2,11 +2,13 @@
 
 Two modes:
 
-* ``classic`` is the assignment's game: 5x5, 5 walls, 1 tunnel.
+* ``classic`` is the assignment's game: 5x5, 5 walls, 1 tunnel. Roles are
+  random, except that on a rematch the last winner plays warder (and so moves
+  first), and every turn is a step up, down, left or right.
 * ``night`` ("Night Escape") is a bigger, darker variant tuned by simulation:
   10x10 yard, limited vision for both sides, a key that unlocks the tunnel,
   the warder's step-and-grab (clicked by hand), footprints, private item boxes
-  and a lockdown.
+  and a lockdown. Players may also pick their side and wait instead of moving.
 
 If a player doesn't move within 10 seconds, they take a random step.
 """
@@ -25,8 +27,8 @@ from solver import classic_outcomes, clear_line, prisoner_forced_wins, reach
 TURN_SECONDS = 10
 NICKNAME_MAX = 16
 
-# Either player may wait (stay put) instead of moving. Set to False for the
-# original assignment rules, where a player has to move every turn.
+# Night Escape: either player may wait (stay put) instead of moving. Classic
+# never allows it: the assignment says every turn is a step to an adjacent block.
 ALLOW_WAIT = True
 WAIT = "stay"
 
@@ -42,10 +44,13 @@ OBSTACLE_COUNT = WALL_COUNTS["classic"]
 # Classic dealing, tuned with tools/balance.py. Every start is checked with the
 # exact solver: neither side may have a guaranteed win. Distances are real
 # walks (breadth-first search), and for the warder the tunnel is a wall.
+# The players also start an odd number of squares apart: every step changes
+# that distance by one, so from an even distance the warder could never stand
+# next to the prisoner on its own turn, and could never catch them.
 MIN_START_GAP = 3            # walking steps from the warder to the prisoner
 MIN_PRISONER_TO_TUNNEL = 3   # walking steps from the prisoner to the tunnel
 MIN_TUNNEL_ENTRANCES = 2     # open squares next to the tunnel (one lets the warder camp on it)
-CLASSIC_DEAL_TRIES = 30      # maps to try before falling back to the plain distance rule
+CLASSIC_DEAL_TRIES = 100     # maps to try before falling back (about 1 map in 5 has a fair start)
 
 # Night Escape tuning (see README for the simulation results)
 LANTERN_RANGE = 1        # warder sees and catches within the 8 squares around them
@@ -71,7 +76,8 @@ ITEMS_FOR_ROLE = {"warder": ("searchlight", "barricade"), "prisoner": ("smoke", 
 ITEM_NAMES = {"searchlight": "Searchlight", "barricade": "Barricade",
               "smoke": "Smoke bomb", "sprint": "Sprint"}
 
-# Which side each player would like to play. Picks are read when a match starts.
+# Night Escape: which side each player would like to play. Picks are read when
+# a match starts. Classic ignores them and deals roles by the assignment's rules.
 SIDES = ("warder", "prisoner", "any")
 SIDE_NAMES = {"warder": "Warder", "prisoner": "Prisoner", "any": "Either"}
 
@@ -160,6 +166,10 @@ class EscapeGame:
     def night(self) -> bool:
         return self.mode == "night"
 
+    @property
+    def can_wait(self) -> bool:
+        return ALLOW_WAIT and self.night
+
     def _reset_night_state(self) -> None:
         self.trail: list[tuple[Cell, bool]] = []   # prisoner's square after each turn, hidden by smoke?
         self.key: Cell | None = None
@@ -216,10 +226,13 @@ class EscapeGame:
         return f"{player.nickname} wants to play {SIDE_NAMES[side]} next match."
 
     def swap_sides(self) -> bool:
-        """Server button: ask for the opposite roles next match (sets both picks)."""
+        """Server button: ask for the opposite roles next match (sets both picks).
+
+        Night Escape only: Classic doesn't use picks.
+        """
 
         roles = self._roles()
-        if "warder" not in roles or "prisoner" not in roles:
+        if not self.night or "warder" not in roles or "prisoner" not in roles:
             return False
         roles["warder"].side, roles["prisoner"].side = "prisoner", "warder"
         return True
@@ -227,11 +240,20 @@ class EscapeGame:
     def _choose_warder(self, fallback_id: str | None) -> tuple[str, str]:
         """Warder for the next match, and a line telling both players why.
 
-        Picks that fit together (Warder+Prisoner, Warder+Either, Prisoner+Either)
-        decide the roles. If both want the same role, the last winner in the room
-        gets it. If both picked Either, the usual rule applies: ``fallback_id``
-        (the last winner, on a rematch) or a random player.
+        Classic follows the assignment: ``fallback_id`` (the last match's winner,
+        on a rematch) is the warder, otherwise a random player.
+
+        Night Escape reads the picks. Picks that fit together (Warder+Prisoner,
+        Warder+Either, Prisoner+Either) decide the roles. If both want the same
+        role, the last winner in the room gets it. If both picked Either, the
+        Classic rule applies.
         """
+
+        if not self.night:
+            if fallback_id in self.players:
+                winner = self.players[fallback_id].nickname
+                return fallback_id, f"{winner} won the last match, so {winner} is the warder and moves first."
+            return self.random.choice(list(self.players)), "Roles were picked at random."
 
         first, second = self.players.values()
         if first.side != second.side:       # any two different picks fit together
@@ -410,7 +432,7 @@ class EscapeGame:
     def _wait(self, player: Player, other: Player) -> tuple[bool, str]:
         """Stay put. It uses up the turn exactly like a step would."""
 
-        if not ALLOW_WAIT:
+        if not self.can_wait:
             return False, "You have to move every turn."
         if self.lunge:
             return False, "You already moved. Click the prisoner to grab them!"
@@ -703,7 +725,7 @@ class EscapeGame:
             "status": self.status,
             "mode": self.mode,
             "mode_name": MODE_NAMES[self.mode],
-            "allow_wait": ALLOW_WAIT,
+            "allow_wait": self.can_wait,
             "size": self.size,
             "match_number": self.match_number,
             "board": ["".join(row) for row in board],
@@ -802,7 +824,7 @@ class EscapeGame:
                 if self.key is None:
                     continue
                 fallback = fallback or (warder, prisoner, self.key, set(self.obstacles), self.tunnel)
-                wins = prisoner_forced_wins(self.size, self.obstacles, self.tunnel, self.key, ALLOW_WAIT)
+                wins = prisoner_forced_wins(self.size, self.obstacles, self.tunnel, self.key, self.can_wait)
                 if (warder, prisoner, 0) not in wins:
                     return warder, prisoner
         if fallback is None:  # practically never: take any legal spots
@@ -879,14 +901,15 @@ class EscapeGame:
                 continue
             free = self._free_cells()
             to_tunnel = self._distances_from(self.tunnel)
-            forced = classic_outcomes(self.size, self.obstacles, self.tunnel, ALLOW_WAIT)
+            forced = classic_outcomes(self.size, self.obstacles, self.tunnel, self.can_wait)
             starts = []
             for warder in free:
                 walk = self._distances_from(warder, blocked={self.tunnel})
                 for prisoner in free:
                     if prisoner != warder and (warder, prisoner, "W") not in forced \
                             and walk.get(prisoner, 0) >= MIN_START_GAP \
-                            and to_tunnel[prisoner] >= MIN_PRISONER_TO_TUNNEL:
+                            and to_tunnel[prisoner] >= MIN_PRISONER_TO_TUNNEL \
+                            and (self.can_wait or manhattan(warder, prisoner) % 2 == 1):
                         starts.append((warder, prisoner))
             if starts:
                 return self.random.choice(starts)

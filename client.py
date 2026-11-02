@@ -232,10 +232,6 @@ class EscapeClient:
         self.name_entry.insert(0, self.nickname)
         self.name_entry.bind("<Return>", lambda _e: self.join())
 
-        tk.Label(inner, text="Which side do you want to play?", bg=CARD, fg=INK,
-                 font=Fonts.get(12, "bold")).pack(anchor="w")
-        self._side_picker(inner, width=380, height=38).pack(fill="x", pady=(6, 16))
-
         self.join_button = PillButton(inner, "Join the game", command=self.join,
                                       color=PRISONER, width=380, height=46, font_size=13)
         self.join_button.pack()
@@ -320,15 +316,13 @@ class EscapeClient:
         self.board.bind("<Leave>", lambda _e: self._set_hover(None))
         self.board.bind("<Button-1>", self._on_board_click)
 
-        # Side for the next match, in the space under the board
-        side_row = tk.Frame(left, bg=PAPER)
-        side_row.pack(fill="x", pady=(12, 0))
-        tk.Label(side_row, text="Side I want next match", bg=PAPER, fg=INK,
+        # Night Escape: side for the next match, in the space under the board
+        self.side_row = tk.Frame(left, bg=PAPER)
+        tk.Label(self.side_row, text="Side I want next match", bg=PAPER, fg=INK,
                  font=Fonts.get(12, "bold")).pack(side="left")
-        self._side_picker(side_row, width=290, height=30, font_size=10, bg=PAPER).pack(side="right")
+        self._side_picker(self.side_row, width=290, height=30, font_size=10, bg=PAPER).pack(side="right")
         self.side_note = tk.Label(left, text="", bg=PAPER, fg=SOFT, font=Fonts.get(10),
                                   wraplength=BOARD_PX, justify="left", anchor="w")
-        self.side_note.pack(fill="x", pady=(4, 0))
 
         # Turn + timer
         turn = card(right, fill="x")
@@ -432,6 +426,12 @@ class EscapeClient:
             self.item_card.pack(fill="x", pady=(12, 0), after=self.scout_card)
         elif not night and self.item_card.winfo_ismapped():
             self.item_card.pack_forget()
+        if night and not self.side_row.winfo_manager():
+            self.side_row.pack(fill="x", pady=(12, 0), after=self.board)
+            self.side_note.pack(fill="x", pady=(4, 0), after=self.side_row)
+        elif not night and self.side_row.winfo_manager():
+            self.side_row.pack_forget()
+            self.side_note.pack_forget()
 
         mine = self._me().get("side")
         if mine in SIDE_LABELS:
@@ -947,7 +947,11 @@ class EscapeClient:
             text="%s  %d  -  %d  %s" % (me.get("nickname", "You"), me.get("score", 0),
                                          other.get("score", 0), other.get("nickname", "")),
             fill=SOFT, font=Fonts.get(14, "bold"))
-        # Pick a side for the rematch right here.
+        if state.get("mode") != "night":
+            canvas.create_text(BOARD_PX / 2, y1 + 175, text="On a rematch, the winner plays warder\n"
+                               "and moves first.", fill=SOFT, font=Fonts.get(11), justify="center")
+            return
+        # Night Escape: pick a side for the rematch right here.
         canvas.create_text(BOARD_PX / 2, y1 + 160, text="Side I want next match",
                            fill=INK, font=Fonts.get(11, "bold"))
         width, gap, top = 104, 10, y1 + 176

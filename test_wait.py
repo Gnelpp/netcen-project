@@ -1,4 +1,4 @@
-"""Waiting instead of moving (ALLOW_WAIT). Night Escape waits are in test_night.py."""
+"""Waiting instead of moving (ALLOW_WAIT). More Night Escape waits are in test_night.py."""
 
 import time
 import unittest
@@ -8,8 +8,8 @@ import game as game_module
 from game import EscapeGame
 
 
-class WaitTests(unittest.TestCase):
-    """Classic: either player may stay put instead of moving (ALLOW_WAIT)."""
+class ClassicMustMoveTests(unittest.TestCase):
+    """Classic follows the assignment: every turn is a step to an adjacent block."""
 
     def setUp(self):
         self.game = EscapeGame(seed=7)
@@ -17,15 +17,43 @@ class WaitTests(unittest.TestCase):
         self.game.add_player("two", "Bob")
         self.game.start_match()
 
-    def test_waiting_passes_the_turn_without_moving(self):
+    def test_classic_refuses_a_wait(self):
         mover = self.game.turn_player_id
         before = self.game.players[mover].position
         accepted, message = self.game.move(mover, "stay")
+        self.assertFalse(accepted)
+        self.assertIn("move every turn", message)
+        self.assertEqual(self.game.players[mover].position, before)
+        self.assertEqual(self.game.turn_player_id, mover)
+        self.assertFalse(self.game.snapshot()["allow_wait"])
+
+    def test_timeout_is_a_random_step(self):
+        mover = self.game.turn_player_id
+        before = self.game.players[mover].position
+        self.game.turn_deadline = time.monotonic() - 1
+        self.game.expire_turn()
+        after = self.game.players[mover].position
+        self.assertEqual(abs(before[0] - after[0]) + abs(before[1] - after[1]), 1)
+
+
+class NightWaitTests(unittest.TestCase):
+    """Night Escape: either player may stay put instead of moving."""
+
+    def setUp(self):
+        self.game = EscapeGame(seed=7, mode="night")
+        self.game.add_player("one", "Alice")
+        self.game.add_player("two", "Bob")
+        self.game.start_match()
+
+    def test_waiting_passes_the_turn_without_moving(self):
+        mover = self.game.turn_player_id
+        before = self.game.players[mover].position
+        accepted, _ = self.game.move(mover, "stay")
         self.assertTrue(accepted)
         self.assertEqual(self.game.players[mover].position, before)
         self.assertNotEqual(self.game.turn_player_id, mover)
         self.assertEqual(self.game.status, "playing")
-        self.assertIn("waited", message)
+        self.assertTrue(self.game.snapshot()["allow_wait"])
 
     def test_both_sides_can_wait(self):
         first = self.game.turn_player_id
@@ -49,14 +77,6 @@ class WaitTests(unittest.TestCase):
             self.assertFalse(self.game.snapshot()["allow_wait"])
         self.assertEqual(self.game.turn_player_id, mover)
         self.assertTrue(self.game.snapshot()["allow_wait"])
-
-    def test_timeout_is_still_a_random_step_not_a_wait(self):
-        mover = self.game.turn_player_id
-        before = self.game.players[mover].position
-        self.game.turn_deadline = time.monotonic() - 1
-        self.game.expire_turn()
-        after = self.game.players[mover].position
-        self.assertEqual(abs(before[0] - after[0]) + abs(before[1] - after[1]), 1)
 
 
 if __name__ == "__main__":

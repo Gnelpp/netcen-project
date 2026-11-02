@@ -103,6 +103,7 @@ class NetworkTests(unittest.TestCase):
         self.assertIsNotNone(prisoner_view["night"]["key"])
 
     def test_players_pick_sides_over_tls(self):
+        self.server.game.set_mode("night")                  # side picks are a Night Escape rule
         alice, bob = Player(self.port), Player(self.port)
         alice.wait_for("hello"); bob.wait_for("hello")
         alice.channel.send({"type": "join", "nickname": "Alice", "side": "prisoner"})
@@ -125,6 +126,24 @@ class NetworkTests(unittest.TestCase):
         players = {p["nickname"]: p for p in update["state"]["players"]}
         self.assertEqual(players["Alice"]["role"], "prisoner")     # roles hold until the next match
         self.assertIn("Bob wants to play Prisoner", update["message"])
+
+    def test_classic_rematch_makes_the_winner_the_warder(self):
+        alice, bob = Player(self.port), Player(self.port)
+        alice.wait_for("hello"); bob.wait_for("hello")
+        alice.channel.send({"type": "join", "nickname": "Alice", "side": "prisoner"})
+        alice.wait_for("welcome")
+        bob.channel.send({"type": "join", "nickname": "Bob", "side": "warder"})
+        message = bob.wait_for("state", lambda m: m["state"]["status"] == "playing")
+        self.assertIn("Roles were picked at random.", message["message"])   # picks don't count in Classic
+        with self.server.lock:
+            prisoner = next(p for p in self.server.game.players.values() if p.role == "prisoner")
+            self.server.game._finish(prisoner.player_id, "escaped")
+        alice.channel.send({"type": "rematch"})
+        bob.channel.send({"type": "rematch"})
+        state = alice.wait_for("state", lambda m: m["state"]["match_number"] == 2)["state"]
+        warder = next(p for p in state["players"] if p["role"] == "warder")
+        self.assertEqual(warder["nickname"], prisoner.nickname)
+        self.assertEqual(state["turn_player_id"], warder["id"])           # and moves first
 
     def test_join_with_an_unknown_side_is_refused(self):
         eve = Player(self.port)

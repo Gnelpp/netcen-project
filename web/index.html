@@ -216,12 +216,6 @@
     <div class="muted">One of you guards the yard. The other one digs out.</div>
     <label for="name">What should we call you?</label>
     <input id="name" maxlength="16" autocomplete="nickname" autocapitalize="words" spellcheck="false">
-    <div class="field" id="joinSideLabel">Which side do you want to play?</div>
-    <div class="sides" role="radiogroup" aria-labelledby="joinSideLabel">
-      <button type="button" role="radio" data-side="warder" aria-checked="false">Warder</button>
-      <button type="button" role="radio" data-side="prisoner" aria-checked="false">Prisoner</button>
-      <button type="button" role="radio" data-side="any" aria-checked="true">Either</button>
-    </div>
     <button class="pill orange" id="joinBtn" disabled>Join the game</button>
     <div id="status" class="faint">Connecting...</div>
     <div id="lobby" class="muted"></div>
@@ -246,13 +240,16 @@
           <div class="big" id="resultBig"></div>
           <p id="resultLine"></p>
           <p class="muted" id="resultScore" style="font-weight:700"></p>
-          <p style="font-weight:700;font-size:14px" id="overlaySideLabel">Side I want next match</p>
-          <div class="sides" role="radiogroup" aria-labelledby="overlaySideLabel">
-            <button type="button" role="radio" data-side="warder" aria-checked="false">Warder</button>
-            <button type="button" role="radio" data-side="prisoner" aria-checked="false">Prisoner</button>
-            <button type="button" role="radio" data-side="any" aria-checked="true">Either</button>
+          <p class="muted" id="overlayRule">On a rematch, the winner plays warder and moves first.</p>
+          <div id="overlaySides">
+            <p style="font-weight:700;font-size:14px" id="overlaySideLabel">Side I want next match</p>
+            <div class="sides" role="radiogroup" aria-labelledby="overlaySideLabel">
+              <button type="button" role="radio" data-side="warder" aria-checked="false">Warder</button>
+              <button type="button" role="radio" data-side="prisoner" aria-checked="false">Prisoner</button>
+              <button type="button" role="radio" data-side="any" aria-checked="true">Either</button>
+            </div>
+            <p class="muted side-note" id="overlaySide"></p>
           </div>
-          <p class="muted side-note" id="overlaySide"></p>
         </div></div>
       </div>
       <div class="empty hidden" id="empty">
@@ -286,7 +283,7 @@
         <div id="itemHint" class="muted" style="font-size:13px;margin-top:8px"></div>
       </div>
       <button class="pill green" id="rematch" disabled>Rematch</button>
-      <div class="card box">
+      <div class="card box hidden" id="sideCard">
         <h3 id="sideCardLabel">Side I want next match</h3>
         <div class="sides" role="radiogroup" aria-labelledby="sideCardLabel">
           <button type="button" role="radio" data-side="warder" aria-checked="false">Warder</button>
@@ -533,11 +530,15 @@ function apply(s) {
   lastTurn = turn;
   document.body.classList.toggle("night", s.mode === "night");
   $("modeChip").classList.toggle("hidden", s.mode !== "night");
+  // Side picks are a Night Escape rule; Classic deals roles by the assignment's rules.
+  $("sideCard").classList.toggle("hidden", s.mode !== "night");
+  $("overlaySides").classList.toggle("hidden", s.mode !== "night");
+  $("overlayRule").classList.toggle("hidden", s.mode === "night");
   if (mine().side in SIDE_LABEL) side = mine().side;
   renderPlayers(); renderTurn(); renderSides(); renderRoom(); renderButtons(); renderItem(); renderBoard();
 }
 
-/* ---------- side picks (used when the next match starts) ---------- */
+/* ---------- Night Escape side picks (used when the next match starts) ---------- */
 function sideStatus() {
   const o = other();
   if (!o.id) return "Your pick is used when the next match starts.";
